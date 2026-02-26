@@ -39,9 +39,12 @@ pub use db::snapshots::SnapshotInfo;
 pub use litebox::SnapshotHandle;
 pub use litebox::{
     BoxCommand, CopyOptions, ExecResult, ExecStderr, ExecStdin, ExecStdout, Execution, ExecutionId,
+    HealthState, HealthStatus,
 };
 pub use metrics::{BoxMetrics, RuntimeMetrics};
-pub use runtime::advanced_options::{AdvancedBoxOptions, ResourceLimits, SecurityOptions};
+pub use runtime::advanced_options::{
+    AdvancedBoxOptions, HealthCheckOptions, ResourceLimits, SecurityOptions,
+};
 use runtime::layout::FilesystemLayout;
 pub use runtime::options::{
     BoxArchive, BoxOptions, BoxliteOptions, CloneOptions, ExportOptions, RootfsSpec,
