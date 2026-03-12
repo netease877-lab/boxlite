@@ -40,6 +40,7 @@ set(TEST_TARGETS
     test_streaming
     test_memory
     test_integration
+    test_execute_cmd
 )
 
 foreach(TARGET ${TEST_TARGETS})
@@ -66,6 +67,18 @@ enable_testing()
 # Register tests
 foreach(TARGET ${TEST_TARGETS})
     add_test(NAME ${TARGET} COMMAND ${TARGET})
+endforeach()
+
+# Label unit tests (no VM required)
+set_tests_properties(test_basic PROPERTIES LABELS "unit")
+
+# Label integration tests (require VM)
+set(INTEGRATION_TESTS
+    test_lifecycle test_execute test_errors test_simple_api
+    test_streaming test_memory test_integration test_execute_cmd
+)
+foreach(TARGET ${INTEGRATION_TESTS})
+    set_tests_properties(${TARGET} PROPERTIES LABELS "integration")
 endforeach()
 
 message(STATUS "BoxLite C Tests Configuration:")
