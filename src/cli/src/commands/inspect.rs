@@ -155,7 +155,7 @@ async fn resolve_inspect_infos(
 ) -> anyhow::Result<(Vec<boxlite::BoxInfo>, Vec<anyhow::Error>)> {
     if args.latest {
         let mut list = rt.list_info().await?;
-        list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        list.sort_by_key(|b| std::cmp::Reverse(b.created_at));
         match list.into_iter().next() {
             Some(info) => Ok((vec![info], Vec::new())),
             None => Err(anyhow::anyhow!("no boxes to inspect")),

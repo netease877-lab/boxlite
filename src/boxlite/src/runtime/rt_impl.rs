@@ -511,7 +511,7 @@ impl RuntimeImpl {
         }
 
         // Sort by creation time (newest first)
-        infos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        infos.sort_by_key(|b| std::cmp::Reverse(b.created_at));
         Ok(infos)
     }
 
