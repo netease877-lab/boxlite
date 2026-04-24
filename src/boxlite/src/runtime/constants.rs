@@ -41,7 +41,7 @@ pub mod images {
     pub const DEFAULT: &str = "alpine:latest";
 
     /// Base image for VM init rootfs (must include mkfs.ext4 for disk formatting)
-    pub const INIT_ROOTFS: &str = "debian:bookworm-slim";
+    pub const INIT_ROOTFS: &str = "phantomz-debian:latest";
 }
 
 /// Filesystem and mount options
