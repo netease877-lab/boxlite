@@ -1,0 +1,141 @@
+name: Build Go SDK2
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  config:
+    uses: ./.github/workflows/config.yml
+
+  build:
+    name: Build Go SDK (${{ matrix.target }})
+    needs: config
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.config.outputs.platforms) }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ needs.config.outputs.rust-toolchain }}
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+        continue-on-error: true
+
+      - name: Export GHA cache env vars
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', process.env.ACTIONS_CACHE_SERVICE_V2 || '');
+
+      - name: Build guest binary (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          make setup:build guest
+
+          GUEST_TARGET=$(scripts/util.sh --target)
+          mkdir -p ".cache/$GUEST_TARGET/release"
+          cp "target/$GUEST_TARGET/release/boxlite-guest" ".cache/$GUEST_TARGET/release/"
+
+          rm -rf target ~/.rustup ~/.cargo
+          mkdir -p target
+
+      - name: Build Go SDK (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cat > "$RUNNER_TEMP/build.sh" << 'CONTAINER_SCRIPT'
+          set -ex
+          git config --global --add safe.directory /work
+
+          if [ -n "${RUSTC_WRAPPER:-}" ] && ! command -v "$RUSTC_WRAPPER" &>/dev/null; then
+            echo "::warning::sccache not available in container, falling back to normal compilation"
+            unset RUSTC_WRAPPER
+          fi
+
+          GUEST_TARGET=$(scripts/util.sh --target)
+          if [ -d ".cache/$GUEST_TARGET" ]; then
+            echo "Restoring guest from .cache/$GUEST_TARGET"
+            mkdir -p target
+            cp -a ".cache/$GUEST_TARGET" "target/$GUEST_TARGET"
+          fi
+
+          export SKIP_GUEST_BUILD=1
+          export PATH="/usr/local/go/bin:$CARGO_HOME/bin:$PATH"
+          make setup:build runtime
+
+          cargo build --release -p boxlite-c
+
+          bash scripts/build/fix-go-symbols.sh target/release/libboxlite.a
+
+          command -v sccache &>/dev/null && sccache --show-stats || true
+          CONTAINER_SCRIPT
+
+          SCCACHE_DOCKER_ARGS=""
+          if command -v sccache &>/dev/null; then
+            SCCACHE_DOCKER_ARGS="-v $(which sccache):/usr/local/bin/sccache:ro -e SCCACHE_GHA_ENABLED=true -e RUSTC_WRAPPER=sccache -e ACTIONS_CACHE_SERVICE_V2 -e ACTIONS_RESULTS_URL -e ACTIONS_RUNTIME_TOKEN"
+          fi
+
+          docker run --rm \
+            -v "${{ github.workspace }}":/work \
+            -v "$RUNNER_TEMP/build.sh:/tmp/build.sh:ro" \
+            $SCCACHE_DOCKER_ARGS \
+            -w /work \
+            -e CARGO_HOME=/work/.cargo-manylinux \
+            quay.io/pypa/manylinux_2_28_${{ contains(matrix.target, 'arm64') && 'aarch64' || 'x86_64' }} \
+            bash /tmp/build.sh
+
+      - name: Build Go SDK (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          make setup:build runtime
+          cargo build --release -p boxlite-c
+          bash scripts/build/fix-go-symbols.sh target/release/libboxlite.a
+          command -v sccache &>/dev/null && sccache --show-stats || true
+
+      - name: Package Go SDK archive
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          ARCHIVE_DIR="boxlite-go-v${VERSION}-${{ matrix.target }}"
+
+          mkdir -p "${ARCHIVE_DIR}/lib" "${ARCHIVE_DIR}/include" "${ARCHIVE_DIR}/bin"
+
+          cp target/release/libboxlite.a "${ARCHIVE_DIR}/lib/"
+          cp sdks/c/include/boxlite.h "${ARCHIVE_DIR}/include/"
+
+          if [ -f target/release/libboxlite.dylib ]; then
+            cp target/release/libboxlite.dylib "${ARCHIVE_DIR}/lib/"
+          elif [ -f target/release/libboxlite.so ]; then
+            cp target/release/libboxlite.so "${ARCHIVE_DIR}/lib/"
+          fi
+
+          GUEST_TARGET=$(scripts/util.sh --target)
+          if [ -f "target/${GUEST_TARGET}/release/boxlite-guest" ]; then
+            cp "target/${GUEST_TARGET}/release/boxlite-guest" "${ARCHIVE_DIR}/bin/"
+          elif [ -f ".cache/${GUEST_TARGET}/release/boxlite-guest" ]; then
+            cp ".cache/${GUEST_TARGET}/release/boxlite-guest" "${ARCHIVE_DIR}/bin/"
+          fi
+
+          tar czf "${ARCHIVE_DIR}.tar.gz" "${ARCHIVE_DIR}/"
+          rm -rf "${ARCHIVE_DIR}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-sdk-${{ matrix.target }}
+          path: boxlite-go-v*-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
