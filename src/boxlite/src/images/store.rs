@@ -21,6 +21,7 @@ use oci_client::Reference;
 use oci_client::manifest::{
     ImageIndexEntry, OciDescriptor, OciImageIndex, OciImageManifest as ClientOciImageManifest,
 };
+use oci_client::client::{ClientConfig, ClientProtocol};
 use oci_client::secrets::RegistryAuth;
 use oci_spec::image::MediaType;
 use std::path::PathBuf;
@@ -100,8 +101,16 @@ impl ImageStore {
     /// * `registries` - Registries to search for unqualified images (tried in order)
     pub fn new(images_dir: PathBuf, db: Database, registries: Vec<String>) -> BoxliteResult<Self> {
         let inner = ImageStoreInner::new(images_dir, db)?;
+        let protocol = if registries.is_empty() {
+            ClientProtocol::Https
+        } else {
+            ClientProtocol::HttpsExcept(registries.clone())
+        };
         Ok(Self {
-            client: oci_client::Client::new(Default::default()),
+            client: oci_client::Client::new(ClientConfig {
+                protocol,
+                ..Default::default()
+            }),
             inner: RwLock::new(inner),
             registries,
         })
