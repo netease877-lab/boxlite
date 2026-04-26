@@ -141,6 +141,14 @@ jobs:
             cp ".cache/${GUEST_TARGET}/release/boxlite-guest" "${ARCHIVE_DIR}/bin/"
           fi
 
+          # Include boxlite-shim (required for VM execution with gvproxy network backend)
+          if [ -f "target/release/boxlite-shim" ]; then
+            cp "target/release/boxlite-shim" "${ARCHIVE_DIR}/bin/"
+            echo "✅ Included boxlite-shim in archive"
+          else
+            echo "⚠️ boxlite-shim not found at target/release/boxlite-shim"
+          fi
+
           tar czf "${ARCHIVE_DIR}.tar.gz" "${ARCHIVE_DIR}/"
           rm -rf "${ARCHIVE_DIR}"
 
