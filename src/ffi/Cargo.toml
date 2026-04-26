@@ -12,6 +12,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
+gvproxy = ["boxlite/gvproxy"]
 
 [dependencies]
 boxlite = { path = "../boxlite" }

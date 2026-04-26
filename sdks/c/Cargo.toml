@@ -13,6 +13,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [features]
 default = []
+gvproxy = ["boxlite-ffi/gvproxy"]
 
 [dependencies]
 boxlite-ffi = { path = "../../src/ffi" }

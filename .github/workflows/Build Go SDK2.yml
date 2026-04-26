@@ -77,7 +77,7 @@ jobs:
           export PATH="/usr/local/go/bin:$CARGO_HOME/bin:$PATH"
           make setup:build runtime
 
-          cargo build --release -p boxlite-c --features boxlite/gvproxy
+          cargo build --release -p boxlite-c --features gvproxy
 
           bash scripts/build/fix-go-symbols.sh target/release/libboxlite.a
 
@@ -121,7 +121,7 @@ jobs:
           export PATH="/usr/local/go/bin:$CARGO_HOME/bin:$PATH"
           make setup:build runtime
 
-          cargo build --release -p boxlite-cli --features boxlite/gvproxy
+          cargo build --release -p boxlite-cli --features gvproxy
 
           command -v sccache &>/dev/null && sccache --show-stats || true
           CONTAINER_SCRIPT
@@ -144,7 +144,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           make setup:build runtime
-          cargo build --release -p boxlite-c --features boxlite/gvproxy
+          cargo build --release -p boxlite-c --features gvproxy
           bash scripts/build/fix-go-symbols.sh target/release/libboxlite.a
           command -v sccache &>/dev/null && sccache --show-stats || true
 
