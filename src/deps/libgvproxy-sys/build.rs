@@ -31,18 +31,20 @@ fn build_gvproxy(source_dir: &Path, output_path: &Path) {
         build_cmd.args(["-mod=vendor"]);
     }
 
+    // Use netgo build tag to use pure Go DNS resolver instead of CGO resolver.
+    // This avoids linking against libresolv which causes -fPIC relocation errors.
+    // IMPORTANT: -tags must come BEFORE the package path (".")
+    build_cmd.args(["-tags", "netgo"]);
+
+    // Set CGO_CFLAGS=-fPIC for position-independent code (required for shared library linking)
+    build_cmd.env("CGO_CFLAGS", "-fPIC");
+
+    // Output path and package must come AFTER all flags
     build_cmd.args([
         "-o",
         output_path.to_str().expect("Invalid output path"),
         ".",
     ]);
-
-    // Set CGO_CFLAGS=-fPIC for position-independent code (required for shared library linking)
-    build_cmd.env("CGO_CFLAGS", "-fPIC");
-
-    // Use netgo build tag to use pure Go DNS resolver instead of CGO resolver.
-    // This avoids linking against libresolv which causes -fPIC relocation errors.
-    build_cmd.args(["-tags", "netgo"]);
 
     let build_status = build_cmd
         .current_dir(source_dir)
