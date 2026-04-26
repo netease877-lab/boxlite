@@ -54,7 +54,7 @@ jobs:
           rm -rf target ~/.rustup ~/.cargo
           mkdir -p target
 
-      - name: Build Go SDK (Linux)
+      - name: Build Go SDK and CLI (Linux)
         if: runner.os == 'Linux'
         run: |
           cat > "$RUNNER_TEMP/build.sh" << 'CONTAINER_SCRIPT'
@@ -81,6 +81,11 @@ jobs:
 
           bash scripts/build/fix-go-symbols.sh target/release/libboxlite.a
 
+          # Build CLI binary (reuses compiled boxlite crate artifacts)
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+            cargo build --release -p boxlite-cli --features gvproxy
+          fi
+
           command -v sccache &>/dev/null && sccache --show-stats || true
           CONTAINER_SCRIPT
 
@@ -97,48 +102,6 @@ jobs:
             -e CARGO_HOME=/work/.cargo-manylinux \
             quay.io/pypa/manylinux_2_28_${{ contains(matrix.target, 'arm64') && 'aarch64' || 'x86_64' }} \
             bash /tmp/build.sh
-
-      - name: Build CLI (Linux x64 only)
-        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
-        run: |
-          cat > "$RUNNER_TEMP/build-cli.sh" << 'CONTAINER_SCRIPT'
-          set -ex
-          git config --global --add safe.directory /work
-
-          if [ -n "${RUSTC_WRAPPER:-}" ] && ! command -v "$RUSTC_WRAPPER" &>/dev/null; then
-            echo "::warning::sccache not available in container, falling back to normal compilation"
-            unset RUSTC_WRAPPER
-          fi
-
-          GUEST_TARGET=$(scripts/util.sh --target)
-          if [ -d ".cache/$GUEST_TARGET" ]; then
-            echo "Restoring guest from .cache/$GUEST_TARGET"
-            mkdir -p target
-            cp -a ".cache/$GUEST_TARGET" "target/$GUEST_TARGET"
-          fi
-
-          export SKIP_GUEST_BUILD=1
-          export PATH="/usr/local/go/bin:$CARGO_HOME/bin:$PATH"
-          make setup:build runtime
-
-          cargo build --release -p boxlite-cli --features gvproxy
-
-          command -v sccache &>/dev/null && sccache --show-stats || true
-          CONTAINER_SCRIPT
-
-          SCCACHE_DOCKER_ARGS=""
-          if command -v sccache &>/dev/null; then
-            SCCACHE_DOCKER_ARGS="-v $(which sccache):/usr/local/bin/sccache:ro -e SCCACHE_GHA_ENABLED=true -e RUSTC_WRAPPER=sccache -e ACTIONS_CACHE_SERVICE_V2 -e ACTIONS_RESULTS_URL -e ACTIONS_RUNTIME_TOKEN"
-          fi
-
-          docker run --rm \
-            -v "${{ github.workspace }}":/work \
-            -v "$RUNNER_TEMP/build-cli.sh:/tmp/build-cli.sh:ro" \
-            $SCCACHE_DOCKER_ARGS \
-            -w /work \
-            -e CARGO_HOME=/work/.cargo-manylinux \
-            quay.io/pypa/manylinux_2_28_x86_64 \
-            bash /tmp/build-cli.sh
 
       - name: Build Go SDK (macOS)
         if: runner.os == 'macOS'
@@ -178,14 +141,9 @@ jobs:
         if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
-          ARCHIVE_DIR="boxlite-cli-v${VERSION}-x86_64-unknown-linux-gnu"
-
-          mkdir -p "${ARCHIVE_DIR}/bin"
-
-          cp target/release/boxlite "${ARCHIVE_DIR}/bin/"
-
-          tar czf "${ARCHIVE_DIR}.tar.gz" "${ARCHIVE_DIR}/"
-          rm -rf "${ARCHIVE_DIR}"
+          CLI_BIN="target/release/boxlite"
+          [ -f "$CLI_BIN" ] || { echo "ERROR: CLI binary not found at $CLI_BIN"; exit 1; }
+          tar czf "boxlite-cli-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz" -C target/release boxlite
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
