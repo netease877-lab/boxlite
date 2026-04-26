@@ -40,6 +40,10 @@ fn build_gvproxy(source_dir: &Path, output_path: &Path) {
     // Set CGO_CFLAGS=-fPIC for position-independent code (required for shared library linking)
     build_cmd.env("CGO_CFLAGS", "-fPIC");
 
+    // Use netgo build tag to use pure Go DNS resolver instead of CGO resolver.
+    // This avoids linking against libresolv which causes -fPIC relocation errors.
+    build_cmd.args(["-tags", "netgo"]);
+
     let build_status = build_cmd
         .current_dir(source_dir)
         .status()
@@ -113,35 +117,12 @@ fn main() {
     println!("cargo:rustc-link-lib=static=gvproxy");
 
     // Transitive dependencies from the Go runtime (embedded in the c-archive).
-    // Go's net package uses the CGO resolver by default, which calls res_search
-    // from libresolv for DNS lookups on both macOS and Linux.
+    // Note: We use -tags netgo to use pure Go DNS resolver, so no libresolv needed.
     #[cfg(target_os = "macos")]
     {
         println!("cargo:rustc-link-lib=framework=CoreFoundation");
         println!("cargo:rustc-link-lib=framework=Security");
     }
-    // On Linux, force static linking of libresolv to ensure the shim binary
-    // remains fully static when built with crt-static. Without this, the linker
-    // picks libresolv.so (dynamic), making the binary dynamically linked and
-    // causing SIGSEGV on TLS access (fs:[0x28]) on some VMs.
-    // When building with --target, Rust may not include the system library
-    // paths, so we add them explicitly for the linker to find libresolv.a.
-    #[cfg(target_os = "linux")]
-    {
-        let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
-        // Debian/Ubuntu: /usr/lib/<triple>
-        let gnu_triple = match arch.as_str() {
-            "x86_64" => "x86_64-linux-gnu",
-            "aarch64" => "aarch64-linux-gnu",
-            _ => "x86_64-linux-gnu",
-        };
-        println!("cargo:rustc-link-search=native=/usr/lib/{}", gnu_triple);
-        // RHEL/manylinux: /usr/lib64
-        println!("cargo:rustc-link-search=native=/usr/lib64");
-        println!("cargo:rustc-link-lib=static=resolv");
-    }
-    #[cfg(not(target_os = "linux"))]
-    println!("cargo:rustc-link-lib=resolv");
 
     // Expose library directory to downstream crates (used by boxlite/build.rs)
     // Convention: {LIBNAME}_BOXLITE_DEP=<path> for auto-discovery
