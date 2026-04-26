@@ -57,6 +57,12 @@ jobs:
       - name: Build Go SDK and CLI (Linux)
         if: runner.os == 'Linux'
         run: |
+          # Determine if CLI should be built (only for x86_64)
+          BUILD_CLI="false"
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+            BUILD_CLI="true"
+          fi
+
           cat > "$RUNNER_TEMP/build.sh" << 'CONTAINER_SCRIPT'
           set -ex
           git config --global --add safe.directory /work
@@ -82,7 +88,7 @@ jobs:
           bash scripts/build/fix-go-symbols.sh target/release/libboxlite.a
 
           # Build CLI binary (reuses compiled boxlite crate artifacts)
-          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+          if [ "$BUILD_CLI" = "true" ]; then
             cargo build --release -p boxlite-cli --features gvproxy
           fi
 
@@ -98,6 +104,7 @@ jobs:
             -v "${{ github.workspace }}":/work \
             -v "$RUNNER_TEMP/build.sh:/tmp/build.sh:ro" \
             $SCCACHE_DOCKER_ARGS \
+            -e BUILD_CLI="$BUILD_CLI" \
             -w /work \
             -e CARGO_HOME=/work/.cargo-manylinux \
             quay.io/pypa/manylinux_2_28_${{ contains(matrix.target, 'arm64') && 'aarch64' || 'x86_64' }} \
