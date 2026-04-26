@@ -37,6 +37,9 @@ fn build_gvproxy(source_dir: &Path, output_path: &Path) {
         ".",
     ]);
 
+    // Set CGO_CFLAGS=-fPIC for position-independent code (required for shared library linking)
+    build_cmd.env("CGO_CFLAGS", "-fPIC");
+
     let build_status = build_cmd
         .current_dir(source_dir)
         .status()
