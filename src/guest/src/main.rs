@@ -85,6 +85,14 @@ fn main() -> BoxliteResult<()> {
         std::process::exit(1);
     }));
 
+    // Decode the cmdline's encoded bootstrap env (see
+    // boxlite_shared::cmdline_env) before tracing init: RUST_LOG and
+    // RUST_BACKTRACE only reach the guest through that channel. Single-threaded
+    // here, so re-executing the process environment is safe.
+    for (key, value) in decode_cmdline_env() {
+        std::env::set_var(&key, &value);
+    }
+
     // Initialize tracing subscriber - respects RUST_LOG env var
     // Default to "info" level if RUST_LOG is not set (for visibility)
     if let Err(e) = tracing_subscriber::fmt()
@@ -124,6 +132,21 @@ fn main() -> BoxliteResult<()> {
         boxlite_shared::errors::BoxliteError::Internal(format!("tokio runtime: {e}"))
     })?;
     rt.block_on(async_main())
+}
+
+/// Bootstrap env encoded on the kernel cmdline by the host
+/// (`boxlite_shared::cmdline_env`). Malformed payload yields an empty vec —
+/// the guest boots regardless, it just loses its bootstrap vars.
+#[cfg(target_os = "linux")]
+fn decode_cmdline_env() -> Vec<(String, String)> {
+    let Ok(encoded) = std::env::var(boxlite_shared::cmdline_env::CMDLINE_ENV_VAR) else {
+        return Vec::new();
+    };
+    let env = boxlite_shared::cmdline_env::decode(&encoded);
+    if env.is_empty() {
+        eprintln!("[guest] WARN: cmdline env present but undecodable, skipping bootstrap vars");
+    }
+    env
 }
 
 #[cfg(target_os = "linux")]
