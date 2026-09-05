@@ -22,6 +22,17 @@ on:
   release:
     types: [ published ]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Full commit SHA to build. Defaults to the branch ref.'
+        required: false
+        default: ''
+        type: string
+      linux_x64_only:
+        description: 'Build only the C archive the Linux AMD64 Runner consumes.'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       ref:
