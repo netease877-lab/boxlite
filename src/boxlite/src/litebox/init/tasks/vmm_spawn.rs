@@ -224,8 +224,7 @@ async fn build_config(
     let vmm_config = volume_mgr.build_vmm_config();
 
     // Guest entrypoint
-    let guest_entrypoint =
-        build_guest_entrypoint(&transport, &ready_transport, &guest_rootfs, options)?;
+    let guest_entrypoint = build_guest_entrypoint(&transport, &ready_transport, &guest_rootfs)?;
 
     // The box's one network backend: it produces the wire spec now, and is
     // threaded on to LiveState (via the init ctx) for runtime control.
@@ -304,7 +303,6 @@ fn build_guest_entrypoint(
     transport: &BoxTransport,
     ready_transport: &BoxTransport,
     guest_rootfs: &GuestRootfs,
-    options: &crate::runtime::options::BoxOptions,
 ) -> BoxliteResult<Entrypoint> {
     let listen_uri = transport.to_uri();
     let ready_notify_uri = ready_transport.to_uri();
@@ -316,24 +314,24 @@ fn build_guest_entrypoint(
     builder.with_arg("--notify");
     builder.with_arg(&ready_notify_uri);
 
-    // Debug vars first (prioritized - guaranteed space)
+    // The kernel tokenizes the cmdline on spaces and hands each `KEY=VALUE`
+    // token to init as an environment variable — raw values with spaces tear
+    // into bogus tokens and the non-`KEY=VALUE` fragments leak into init's
+    // argv, where the agent's clap dies with "unexpected argument" (VM fails
+    // to start). Container env (image + user + secrets) reaches the guest via
+    // the gRPC socket instead (container_rootfs.rs, single source of truth),
+    // so none of it rides the cmdline; only the agent's own bootstrap vars do,
+    // encoded (see boxlite_shared::cmdline_env).
+    let mut bootstrap_env = Vec::new();
     if let Ok(v) = std::env::var("RUST_LOG") {
-        builder.with_env("RUST_LOG", &v);
+        bootstrap_env.push(("RUST_LOG".to_string(), v));
     }
     if let Ok(v) = std::env::var("RUST_BACKTRACE") {
-        builder.with_env("RUST_BACKTRACE", &v);
+        bootstrap_env.push(("RUST_BACKTRACE".to_string(), v));
     }
-
-    // FILO order: image → user (later overrides earlier)
-    for (key, value) in &guest_rootfs.env {
-        builder.with_env(key, value);
+    if let Some(encoded) = boxlite_shared::cmdline_env::encode(&bootstrap_env) {
+        builder.with_env(boxlite_shared::cmdline_env::CMDLINE_ENV_VAR, &encoded);
     }
-    for (key, value) in &options.env {
-        builder.with_env(key, value);
-    }
-
-    // Secret placeholder env vars are injected in container_rootfs.rs (single source of truth).
-    // The guest init process inherits them from the container environment.
 
     Ok(builder.build())
 }

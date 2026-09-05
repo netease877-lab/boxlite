@@ -27,6 +27,7 @@ pub const GIT_COMMIT: Option<&str> = option_env!("BOXLITE_GIT_COMMIT");
 pub type BoxByteStream =
     std::pin::Pin<Box<dyn futures::Stream<Item = std::io::Result<Vec<u8>>> + Send + 'static>>;
 
+pub mod cmdline_env;
 pub mod constants;
 pub mod errors;
 pub mod layout;
