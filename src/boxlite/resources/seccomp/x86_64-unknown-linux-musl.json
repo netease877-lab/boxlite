@@ -521,7 +521,6 @@
         "syscall": "restart_syscall",
         "comment": "automatically issued by the kernel when specific timing-related syscalls (e.g. nanosleep) get interrupted by SIGSTOP"
       },
-
       {
         "syscall": "openat",
         "comment": "libkrun: glibc 2.26+ maps open() to openat(AT_FDCWD, ...)"
@@ -541,6 +540,10 @@
       {
         "syscall": "unlinkat",
         "comment": "libkrun: modern unlink (glibc uses unlinkat)"
+      },
+      {
+        "syscall": "renameat2",
+        "comment": "libkrun virtiofs rename passthrough (guest filesystems use RENAME_NOREPLACE-style atomic rename via raw SYS_renameat2); a blocked rename SIGSYS-kills the VMM when the guest renames a file (e.g. CPython committing a .pyc temp file)"
       },
       {
         "syscall": "clone3",
@@ -766,7 +769,6 @@
         "syscall": "waitid",
         "comment": "libkrun: wait for child process (extended)"
       },
-
       {
         "syscall": "ioctl",
         "comment": "libkrun: KVM VM setup requires 28+ ioctl codes; ge 0 matches any request code",

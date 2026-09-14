@@ -521,7 +521,6 @@
         "syscall": "restart_syscall",
         "comment": "automatically issued by the kernel when specific timing-related syscalls (e.g. nanosleep) get interrupted by SIGSTOP"
       },
-
       {
         "syscall": "openat",
         "comment": "libkrun: glibc 2.26+ maps open() to openat(AT_FDCWD, ...). Required at steady-state."
@@ -541,6 +540,10 @@
       {
         "syscall": "unlinkat",
         "comment": "libkrun: modern unlink (glibc uses unlinkat). TODO(seccomp): likely setup-only, may be removable after audit."
+      },
+      {
+        "syscall": "renameat2",
+        "comment": "libkrun virtiofs rename passthrough (guest filesystems use RENAME_NOREPLACE-style atomic rename via raw SYS_renameat2); a blocked rename SIGSYS-kills the VMM when the guest renames a file (e.g. CPython committing a .pyc temp file)"
       },
       {
         "syscall": "clone3",
@@ -770,10 +773,9 @@
         "syscall": "waitid",
         "comment": "libkrun: wait for child process (extended). Required at steady-state."
       },
-
       {
         "syscall": "ioctl",
-        "comment": "TODO(seccomp): overly broad — replace with explicit KVM ioctl codes once libkrun's full set is audited. Firecracker enumerates each KVM_* code individually. Currently catch-all because libkrun uses 28+ distinct KVM ioctls during VM setup and runtime.",
+        "comment": "TODO(seccomp): overly broad \u2014 replace with explicit KVM ioctl codes once libkrun's full set is audited. Firecracker enumerates each KVM_* code individually. Currently catch-all because libkrun uses 28+ distinct KVM ioctls during VM setup and runtime.",
         "args": [
           {
             "index": 1,
@@ -786,7 +788,7 @@
       },
       {
         "syscall": "mmap",
-        "comment": "TODO(seccomp): overly broad — replace with explicit MAP_* flag combinations once libkrun's mmap usage is audited. Currently catch-all because libkrun uses MAP_SHARED, MAP_PRIVATE|MAP_ANONYMOUS, MAP_FIXED, and more for guest RAM, balloon, and I/O regions.",
+        "comment": "TODO(seccomp): overly broad \u2014 replace with explicit MAP_* flag combinations once libkrun's mmap usage is audited. Currently catch-all because libkrun uses MAP_SHARED, MAP_PRIVATE|MAP_ANONYMOUS, MAP_FIXED, and more for guest RAM, balloon, and I/O regions.",
         "args": [
           {
             "index": 3,
@@ -799,7 +801,7 @@
       },
       {
         "syscall": "socket",
-        "comment": "TODO(seccomp): overly broad — replace with explicit AF_UNIX/AF_INET/AF_INET6 rules once libkrun's socket usage is audited. Currently catch-all because libkrun uses various domain/type/protocol combinations for vsock and networking.",
+        "comment": "TODO(seccomp): overly broad \u2014 replace with explicit AF_UNIX/AF_INET/AF_INET6 rules once libkrun's socket usage is audited. Currently catch-all because libkrun uses various domain/type/protocol combinations for vsock and networking.",
         "args": [
           {
             "index": 0,
@@ -812,7 +814,7 @@
       },
       {
         "syscall": "fcntl",
-        "comment": "TODO(seccomp): overly broad — replace with explicit F_GETFD/F_SETFD/F_GETFL/F_SETFL rules. Currently catch-all because libkrun uses multiple fcntl commands for FD management.",
+        "comment": "TODO(seccomp): overly broad \u2014 replace with explicit F_GETFD/F_SETFD/F_GETFL/F_SETFL rules. Currently catch-all because libkrun uses multiple fcntl commands for FD management.",
         "args": [
           {
             "index": 1,
@@ -825,7 +827,7 @@
       },
       {
         "syscall": "futex",
-        "comment": "TODO(seccomp): overly broad — replace with explicit FUTEX_WAIT/WAKE/WAIT_PRIVATE/WAKE_PRIVATE/WAIT_BITSET_PRIVATE rules once libkrun's futex ops are audited. Currently catch-all because seccompiler silently drops unconditional entries when conditional entries exist for the same syscall.",
+        "comment": "TODO(seccomp): overly broad \u2014 replace with explicit FUTEX_WAIT/WAKE/WAIT_PRIVATE/WAKE_PRIVATE/WAIT_BITSET_PRIVATE rules once libkrun's futex ops are audited. Currently catch-all because seccompiler silently drops unconditional entries when conditional entries exist for the same syscall.",
         "args": [
           {
             "index": 1,
@@ -838,7 +840,7 @@
       },
       {
         "syscall": "rt_sigaction",
-        "comment": "TODO(seccomp): overly broad — replace with explicit signal numbers (SIGABRT, SIGSEGV, SIGBUS, etc.) once libkrun's signal set is known. Currently catch-all because libkrun registers handlers for multiple signals during VM setup.",
+        "comment": "TODO(seccomp): overly broad \u2014 replace with explicit signal numbers (SIGABRT, SIGSEGV, SIGBUS, etc.) once libkrun's signal set is known. Currently catch-all because libkrun registers handlers for multiple signals during VM setup.",
         "args": [
           {
             "index": 0,
@@ -851,7 +853,7 @@
       },
       {
         "syscall": "accept4",
-        "comment": "TODO(seccomp): overly broad — replace with explicit SOCK_CLOEXEC rule once libkrun's accept4 flags are confirmed. Currently catch-all for compatibility.",
+        "comment": "TODO(seccomp): overly broad \u2014 replace with explicit SOCK_CLOEXEC rule once libkrun's accept4 flags are confirmed. Currently catch-all for compatibility.",
         "args": [
           {
             "index": 3,
