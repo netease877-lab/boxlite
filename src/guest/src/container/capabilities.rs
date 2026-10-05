@@ -257,9 +257,11 @@ mod tests {
     }
 
     #[test]
-    fn default_capabilities_has_14_docker_defaults() {
+    fn default_capabilities_has_15_docker_defaults() {
         let caps = CapabilitySet::default();
-        assert_eq!(caps.len(), 14);
+        // SysResource joined the Docker baseline (2026-10-05): exec children must
+        // be able to raise their own RLIMIT_NOFILE (phantomz G2 root fix).
+        assert_eq!(caps.len(), 15);
     }
 
     #[test]
@@ -268,6 +270,7 @@ mod tests {
         let required = [
             Capability::Chown,
             Capability::DacOverride,
+            Capability::SysResource,
             Capability::Fowner,
             Capability::Fsetid,
             Capability::Kill,
@@ -339,7 +342,7 @@ mod tests {
         let resolved = CapabilitySet::resolve(&[], &[]).expect("resolve default capabilities");
 
         assert_eq!(resolved, CapabilitySet::default());
-        assert_eq!(resolved.len(), 14);
+        assert_eq!(resolved.len(), 15);
     }
 
     #[test]
@@ -347,7 +350,7 @@ mod tests {
         let resolved =
             CapabilitySet::resolve(&names(&["SYS_ADMIN"]), &[]).expect("resolve added capability");
 
-        assert_eq!(resolved.len(), 15);
+        assert_eq!(resolved.len(), 16);
         assert!(resolved.contains(&Capability::SysAdmin));
         assert!(resolved.contains(&Capability::NetRaw));
     }
@@ -357,7 +360,7 @@ mod tests {
         let resolved =
             CapabilitySet::resolve(&[], &names(&["NET_RAW"])).expect("resolve dropped capability");
 
-        assert_eq!(resolved.len(), 13);
+        assert_eq!(resolved.len(), 14);
         assert!(!resolved.contains(&Capability::NetRaw));
         assert!(resolved.contains(&Capability::NetBindService));
     }

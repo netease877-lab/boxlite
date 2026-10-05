@@ -890,13 +890,14 @@ mod tests {
             .to_oci()
             .expect("build expected OCI capability sets");
 
-        let process = build_tty_exec_process(
+        let process = build_exec_process(
             &["sh".to_string()],
             &["PATH=/bin".to_string()],
             "/",
             0,
             0,
             resolved.clone(),
+            true,
         )
         .expect("build tty exec process");
 
