@@ -35,7 +35,7 @@ use std::sync::OnceLock;
 #[cfg(target_os = "linux")]
 use std::time::Instant;
 #[cfg(target_os = "linux")]
-use tracing::info;
+use tracing::{info, warn};
 
 /// Boot timestamp, set once at guest agent startup.
 #[cfg(target_os = "linux")]
@@ -118,6 +118,21 @@ fn main() -> BoxliteResult<()> {
         "[guest] T+{}ms: kernel hardening applied",
         boot_elapsed_ms()
     );
+
+    // Raise RLIMIT_NOFILE for the whole guest agent process tree. The exec
+    // tenants (GuestExecutor / SSH workload) spawn children directly from this
+    // process and inherit its limit — the container-init spec's 1M NOFILE
+    // (container/spec.rs "match Docker's defaults") never reached them, so a
+    // long-lived box servicing dozens of execs accumulated pipes/sockets/
+    // session fds toward the kernel default 1024 and started failing with
+    // EMFILE ("sh: 1: skill_bin: Too many open files"). Real incident:
+    // phantomz task_2026-10-04_221008, 52 execs in 18 min, EMFILE from ~exec
+    // #30 (2026-10-04). Runs as root inside the VM, so both limits are
+    // raisable; failure is non-fatal (children keep the inherited limit).
+    match nix::sys::resource::setrlimit(nix::sys::resource::Resource::RLIMIT_NOFILE, 1_048_576, 1_048_576) {
+        Ok(()) => eprintln!("[guest] T+{}ms: RLIMIT_NOFILE raised to 1048576", boot_elapsed_ms()),
+        Err(e) => warn!(error = %e, "failed to raise RLIMIT_NOFILE; exec children keep the inherited limit"),
+    }
 
     // Start zygote BEFORE tokio creates any threads.
     // The zygote handles all clone3() calls in a single-threaded context,
