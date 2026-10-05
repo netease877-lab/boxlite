@@ -35,7 +35,7 @@ use std::sync::OnceLock;
 #[cfg(target_os = "linux")]
 use std::time::Instant;
 #[cfg(target_os = "linux")]
-use tracing::info;
+use tracing::{info, warn};
 
 /// Boot timestamp, set once at guest agent startup.
 #[cfg(target_os = "linux")]
@@ -110,6 +110,19 @@ fn main() -> BoxliteResult<()> {
         "[guest] T+{}ms: kernel hardening applied",
         boot_elapsed_ms()
     );
+
+    // Raise RLIMIT_NOFILE for the whole guest agent process tree so exec tenants
+    // inherit a usable ceiling instead of the kernel default 1024 — a long-lived
+    // box accumulates pipes/sockets/session fds per exec and hits EMFILE
+    // ("skill_bin: Too many open files", phantomz task_2026-10-04_221008, ~exec
+    // #30 of 52). Best-effort: if the agent's capability set lacks
+    // CAP_SYS_RESOURCE this fails and exec-side mitigation still applies
+    // (container/capabilities.rs baseline + per-child pre_exec in
+    // service/exec/executor.rs).
+    match nix::sys::resource::setrlimit(nix::sys::resource::Resource::RLIMIT_NOFILE, 1_048_576, 1_048_576) {
+        Ok(()) => eprintln!("[guest] T+{}ms: RLIMIT_NOFILE raised to 1048576", boot_elapsed_ms()),
+        Err(e) => warn!(error = %e, "failed to raise RLIMIT_NOFILE; exec children keep the inherited limit"),
+    }
 
     // Start zygote BEFORE tokio creates any threads.
     // The zygote handles all clone3() calls in a single-threaded context,

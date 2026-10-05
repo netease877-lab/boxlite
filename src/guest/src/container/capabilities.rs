@@ -83,6 +83,12 @@ impl Default for CapabilitySet {
                 Capability::Mknod,
                 Capability::AuditWrite,
                 Capability::Setfcap,
+                // CAP_SYS_RESOURCE: exec tenants must be able to raise their own
+                // RLIMIT_NOFILE hard limit (spec.rlimits=1M) — the guest agent's
+                // exec children previously hit EMFILE at the kernel default 1024
+                // after ~30 execs in one box (phantomz task_2026-10-04_221008).
+                // Resource-only capability, no escape-semantics, single-user VM.
+                Capability::SysResource,
             ]
             .into_iter()
             .collect(),
