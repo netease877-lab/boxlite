@@ -165,6 +165,8 @@ impl CapabilitySet {
     }
 
     /// Canonical names accepted by libcontainer's tenant builder.
+    /// Tests-only since exec tenants serialize via process.json (to_oci).
+    #[cfg(test)]
     pub(crate) fn names(&self) -> Vec<String> {
         let mut names: Vec<String> = self
             .0
