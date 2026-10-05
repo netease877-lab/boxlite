@@ -111,17 +111,20 @@ fn main() -> BoxliteResult<()> {
         boot_elapsed_ms()
     );
 
-    // Raise RLIMIT_NOFILE for the whole guest agent process tree so exec tenants
-    // inherit a usable ceiling instead of the kernel default 1024 — a long-lived
-    // box accumulates pipes/sockets/session fds per exec and hits EMFILE
-    // ("skill_bin: Too many open files", phantomz task_2026-10-04_221008, ~exec
-    // #30 of 52). Best-effort: if the agent's capability set lacks
-    // CAP_SYS_RESOURCE this fails and exec-side mitigation still applies
-    // (container/capabilities.rs baseline + per-child pre_exec in
-    // service/exec/executor.rs).
+    // Raise RLIMIT_NOFILE for the whole guest agent process tree. Two consumers:
+    // the agent itself (a long-lived box accumulates pipes/sockets/session fds
+    // per exec and hits EMFILE at the kernel default 1024 — "skill_bin: Too many
+    // open files", phantomz task_2026-10-04_221008, ~exec #30 of 52), and bare
+    // guest execs (service/exec/executor.rs), which inherit this limit. Container
+    // exec tenants do NOT rely on inheritance — youki's intermediate process
+    // applies the explicit rlimits from the exec process.json (container/spec.rs,
+    // default_nofile_rlimits) regardless of what the fork chain carries. Needs
+    // CAP_SYS_RESOURCE; the agent runs with the VM's full capability set.
+    // Best-effort: if this fails, container execs are still covered by the
+    // process.json rlimits.
     match nix::sys::resource::setrlimit(nix::sys::resource::Resource::RLIMIT_NOFILE, 1_048_576, 1_048_576) {
         Ok(()) => eprintln!("[guest] T+{}ms: RLIMIT_NOFILE raised to 1048576", boot_elapsed_ms()),
-        Err(e) => warn!(error = %e, "failed to raise RLIMIT_NOFILE; exec children keep the inherited limit"),
+        Err(e) => warn!(error = %e, "failed to raise RLIMIT_NOFILE; container execs remain covered by exec process.json rlimits"),
     }
 
     // Start zygote BEFORE tokio creates any threads.

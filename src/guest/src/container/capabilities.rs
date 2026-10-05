@@ -83,11 +83,14 @@ impl Default for CapabilitySet {
                 Capability::Mknod,
                 Capability::AuditWrite,
                 Capability::Setfcap,
-                // CAP_SYS_RESOURCE: exec tenants must be able to raise their own
-                // RLIMIT_NOFILE hard limit (spec.rlimits=1M) — the guest agent's
-                // exec children previously hit EMFILE at the kernel default 1024
-                // after ~30 execs in one box (phantomz task_2026-10-04_221008).
-                // Resource-only capability, no escape-semantics, single-user VM.
+                // CAP_SYS_RESOURCE: deliberately beyond Docker's 14-cap baseline.
+                // The NOFILE fix itself does not need it (youki's intermediate
+                // process applies spec rlimits with the VM's inherited caps, and
+                // the exec process.json carries them explicitly); this is for
+                // workloads that raise their own limits from inside the box
+                // (nested runtimes, e.g. DinD dockerd, and app-level
+                // resource.setrlimit). Resource-only, no escape semantics,
+                // single-user VM (phantomz task_2026-10-04_221008 follow-up).
                 Capability::SysResource,
             ]
             .into_iter()
@@ -257,10 +260,10 @@ mod tests {
     }
 
     #[test]
-    fn default_capabilities_has_15_docker_defaults() {
+    fn default_capabilities_is_14_docker_caps_plus_sys_resource() {
         let caps = CapabilitySet::default();
-        // SysResource joined the Docker baseline (2026-10-05): exec children must
-        // be able to raise their own RLIMIT_NOFILE (phantomz G2 root fix).
+        // Docker baseline (14) + deliberate SysResource addition (see the
+        // default-set comment). Not "Docker defaults" anymore — named so.
         assert_eq!(caps.len(), 15);
     }
 

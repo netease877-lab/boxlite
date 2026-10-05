@@ -477,10 +477,8 @@ fn build_process_spec(
         .build()
         .map_err(|e| BoxliteError::Internal(format!("Failed to build user spec: {}", e)))?;
 
-    // Build rlimits
-    // Set NOFILE to 1048576 to match Docker's defaults
-    // This allows applications to open many files/connections (databases, web servers, etc.)
-    #[allow(unused)]
+    // NOFILE 1048576, same source as the exec process.json (default_nofile_rlimits)
+    // — a single knob for every process in the box.
     let rlimits = default_nofile_rlimits()?;
 
     ProcessBuilder::default()
@@ -519,6 +517,15 @@ pub(crate) fn build_exec_process(
     capabilities: CapabilitySet,
     terminal: bool,
 ) -> BoxliteResult<oci_spec::runtime::Process> {
+    // youki's builder mode rejected a relative cwd ("must be an absolute path");
+    // process.json mode would silently carry it into the OCI spec — keep the
+    // guarantee explicit (youki tenant_builder.rs get_working_dir semantics).
+    if !Path::new(cwd).is_absolute() {
+        return Err(BoxliteError::Internal(format!(
+            "exec cwd must be an absolute path: {cwd}"
+        )));
+    }
+
     let user = UserBuilder::default()
         .uid(uid)
         .gid(gid)
@@ -911,6 +918,51 @@ mod tests {
         assert_eq!(capabilities.permitted(), expected.permitted());
         assert_eq!(capabilities.inheritable(), &None);
         assert_eq!(capabilities.ambient(), &None);
+    }
+
+    /// Regression anchor for the EMFILE root fix (phantomz task_2026-10-04_221008):
+    /// the exec Process MUST carry rlimits explicitly. youki's builder mode would
+    /// let oci-spec fill an implicit RLIMIT_NOFILE 1024/1024, which the
+    /// intermediate process then applies — clobbering the raised limit. If this
+    /// assertion fails, the default fill-in has crept back in.
+    #[test]
+    fn exec_process_carries_explicit_nofile_rlimits() {
+        let process = build_exec_process(
+            &["sh".to_string()],
+            &["PATH=/bin".to_string()],
+            "/",
+            0,
+            0,
+            CapabilitySet::default(),
+            false,
+        )
+        .expect("build non-tty exec process");
+
+        let rlimits = process
+            .rlimits()
+            .as_ref()
+            .expect("exec process must set rlimits (oci-spec would otherwise fill 1024/1024)");
+        let nofile = rlimits
+            .iter()
+            .find(|r| r.typ() == PosixRlimitType::RlimitNofile)
+            .expect("RLIMIT_NOFILE must be present in exec process rlimits");
+        assert_eq!(nofile.hard(), 1024u64 * 1024u64);
+        assert_eq!(nofile.soft(), 1024u64 * 1024u64);
+    }
+
+    #[test]
+    fn exec_process_rejects_relative_cwd() {
+        let err = build_exec_process(
+            &["sh".to_string()],
+            &[],
+            "relative/dir",
+            0,
+            0,
+            CapabilitySet::default(),
+            false,
+        )
+        .expect_err("relative cwd must be rejected (builder-mode parity)");
+        assert!(format!("{err}").contains("absolute path"));
     }
 
     // ==================
