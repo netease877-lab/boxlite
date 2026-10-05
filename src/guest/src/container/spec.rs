@@ -481,12 +481,7 @@ fn build_process_spec(
     // Set NOFILE to 1048576 to match Docker's defaults
     // This allows applications to open many files/connections (databases, web servers, etc.)
     #[allow(unused)]
-    let rlimits = vec![PosixRlimitBuilder::default()
-        .typ(PosixRlimitType::RlimitNofile)
-        .hard(1024u64 * 1024u64)
-        .soft(1024u64 * 1024u64)
-        .build()
-        .map_err(|e| BoxliteError::Internal(format!("Failed to build rlimit: {}", e)))?];
+    let rlimits = default_nofile_rlimits()?;
 
     ProcessBuilder::default()
         // OCI `process.terminal`: with it set, the runtime allocates a PTY for
@@ -510,13 +505,19 @@ fn build_process_spec(
 /// builder has no per-exec terminal setter, so this Process is serialized to a
 /// process.json and passed via `ContainerBuilder::with_process`. Same shape as
 /// `build_process_spec` but with the terminal flag on.
-pub(crate) fn build_tty_exec_process(
+///
+/// Every exec Process MUST carry rlimits explicitly: `ProcessBuilder::default()`
+/// would otherwise leave them to oci-spec's implicit `RLIMIT_NOFILE 1024/1024`
+/// fill-in (oci-spec 0.9.0 process.rs), which the intermediate process applies
+/// verbatim — clobbering the raised limit the fork chain inherited.
+pub(crate) fn build_exec_process(
     args: &[String],
     env: &[String],
     cwd: &str,
     uid: u32,
     gid: u32,
     capabilities: CapabilitySet,
+    terminal: bool,
 ) -> BoxliteResult<oci_spec::runtime::Process> {
     let user = UserBuilder::default()
         .uid(uid)
@@ -524,16 +525,33 @@ pub(crate) fn build_tty_exec_process(
         .build()
         .map_err(|e| BoxliteError::Internal(format!("Failed to build user spec: {}", e)))?;
 
-    ProcessBuilder::default()
-        .terminal(true)
+    let mut builder = ProcessBuilder::default()
         .user(user)
         .args(args.to_vec())
         .env(env)
         .cwd(cwd)
         .capabilities(capabilities.to_oci()?)
-        .no_new_privileges(false)
+        .rlimits(default_nofile_rlimits()?)
+        .no_new_privileges(false);
+    if terminal {
+        builder = builder.terminal(true);
+    }
+    builder
         .build()
-        .map_err(|e| BoxliteError::Internal(format!("Failed to build tty exec process: {}", e)))
+        .map_err(|e| BoxliteError::Internal(format!("Failed to build exec process: {}", e)))
+}
+
+/// NOFILE 1048576 (soft=hard), matching Docker's defaults and the init spec —
+/// a long-lived box accumulates pipes/sockets/session fds per exec and hits
+/// EMFILE at 1024 (phantomz task_2026-10-04_221008).
+pub(crate) fn default_nofile_rlimits() -> BoxliteResult<Vec<oci_spec::runtime::PosixRlimit>> {
+    let rlimit = PosixRlimitBuilder::default()
+        .typ(PosixRlimitType::RlimitNofile)
+        .hard(1024u64 * 1024u64)
+        .soft(1024u64 * 1024u64)
+        .build()
+        .map_err(|e| BoxliteError::Internal(format!("Failed to build rlimit: {}", e)))?;
+    Ok(vec![rlimit])
 }
 
 /// Build root filesystem specification

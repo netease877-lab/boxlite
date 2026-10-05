@@ -316,13 +316,14 @@ fn do_build(spec: BuildSpec, fds: Option<[RawFd; 3]>) -> BuildResult {
             // The PTY path passes no stdio fds — youki wires the PTY slave instead.
             let env_vec: Vec<String> = spec.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
             let cwd = spec.cwd.to_str().unwrap_or("/");
-            let process = super::spec::build_tty_exec_process(
+            let process = super::spec::build_exec_process(
                 &spec.args,
                 &env_vec,
                 cwd,
                 spec.uid,
                 spec.gid,
                 spec.capabilities.clone(),
+                true,
             )
             .map_err(|e| format!("build tty exec process: {e}"))?;
             let process_json = serde_json::to_vec(&process)
@@ -343,22 +344,41 @@ fn do_build(spec: BuildSpec, fds: Option<[RawFd; 3]>) -> BuildResult {
             result?
         } else {
             // Non-TTY exec: stdio via the passed pipe fds, no console socket,
-            // terminal=false, non-detached.
-            builder
+            // terminal=false, non-detached. Same process.json path as the TTY
+            // arm: youki's builder-mode Process gets its rlimits filled by
+            // oci-spec's implicit RLIMIT_NOFILE 1024/1024 default, which the
+            // intermediate process applies verbatim — clobbering whatever the
+            // fork chain inherited (see build_exec_process).
+            let env_vec: Vec<String> = spec.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            let cwd = spec.cwd.to_str().unwrap_or("/");
+            let process = super::spec::build_exec_process(
+                &spec.args,
+                &env_vec,
+                cwd,
+                spec.uid,
+                spec.gid,
+                spec.capabilities.clone(),
+                false,
+            )
+            .map_err(|e| format!("build exec process: {e}"))?;
+            let process_json = serde_json::to_vec(&process)
+                .map_err(|e| format!("serialize exec process.json: {e}"))?;
+            let process_path = spec
+                .state_root
+                .join(format!("exec-process-{}.json", spec.container_id));
+            std::fs::write(&process_path, process_json)
+                .map_err(|e| format!("write exec process.json: {e}"))?;
+            let result = builder
                 .as_tenant()
                 // CLONE_PARENT so the tenant reparents to guest main (not the
                 // zygote); guest main's reaper owns its exit. The zygote never waits.
                 .as_sibling(true)
-                .with_capabilities(spec.capabilities.names())
-                .with_no_new_privs(false)
                 .with_detach(false)
-                .with_cwd(Some(spec.cwd))
-                .with_env(spec.env)
-                .with_container_args(spec.args)
-                .with_user(Some(spec.uid))
-                .with_group(Some(spec.gid))
+                .with_process(Some(process_path.clone()))
                 .build()
-                .map_err(|e| format!("build failed: {e}"))?
+                .map_err(|e| format!("build failed: {e}"));
+            let _ = std::fs::remove_file(&process_path);
+            result?
         };
 
         Ok(pid)
