@@ -145,6 +145,28 @@ fn spawn_with_pipes(req: &ExecRequest) -> BoxliteResult<ExecHandle> {
         cmd.current_dir(&req.workdir);
     }
 
+    // Raise NOFILE in the child before execve: exec children inherit the agent's
+    // rlimit (kernel default 1024) and a long-lived box accumulates pipes/sockets/
+    // session fds until EMFILE ("skill_bin: Too many open files", phantomz
+    // task_2026-10-04_221008). Requires CAP_SYS_RESOURCE for the hard bump — the
+    // capability baseline now includes it (container/capabilities.rs). Best-effort:
+    // a denied raise is not a spawn failure.
+    {
+        use std::os::unix::process::CommandExt;
+        // Safety: the closure only calls setrlimit — no allocation, no locking,
+        // async-signal-safe between fork and execve.
+        unsafe {
+            cmd.pre_exec(|| {
+                let _ = nix::sys::resource::setrlimit(
+                    nix::sys::resource::Resource::RLIMIT_NOFILE,
+                    1_048_576,
+                    1_048_576,
+                );
+                Ok(())
+            });
+        }
+    }
+
     // Create pipes for stdin/stdout/stderr
     let (stdin_read, stdin_write) = nix::unistd::pipe()
         .map_err(|e| BoxliteError::Internal(format!("Failed to create stdin pipe: {}", e)))?;
